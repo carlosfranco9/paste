@@ -86,7 +86,6 @@ class MainWindow(QWidget):
         self._recent_hashes = set()
         self._setup_ui()
         self._setup_hotkey()
-        self._load_history()
         self._setup_auto_hide()
 
     def _setup_ui(self):
@@ -197,7 +196,7 @@ class MainWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._load_history()
+        self._refresh_list(self._search_bar.text().strip())
 
     def focusOutEvent(self, event):
         super().focusOutEvent(event)
@@ -223,32 +222,35 @@ class MainWindow(QWidget):
             self._recent_hashes.clear()
         entry = self._clip_processor.process(data)
         if entry:
-            self._list.append_entry(entry)
-            self._update_count()
+            query = self._search_bar.text().strip()
+            if query:
+                self._refresh_list(query)
+            else:
+                self._list.append_entry(entry)
+                self._update_count()
 
     def _on_search(self, query: str):
-        if query:
-            rows = fts_search(query)
-            entries = [ClipboardEntry.from_row(r) for r in rows]
-            self._list.set_entries(entries)
-        else:
-            self._load_history()
+        self._refresh_list(query)
 
     def _on_search_confirm(self):
+        self._search_bar.cancel_pending_search()
         query = self._search_bar.text().strip()
+        entries = self._refresh_list(query)
         if not query:
-            return self._load_history()
-        rows = fts_search(query)
-        entries = [ClipboardEntry.from_row(r) for r in rows]
-        self._list.set_entries(entries)
+            return
         if entries and self._list._items:
             first = self._list._items[0]
             self._on_entry_clicked(first.entry.id)
 
-    def _load_history(self):
-        entries = get_recent_entries(limit=100)
+    def _refresh_list(self, query: str = ""):
+        if query:
+            rows = fts_search(query)
+            entries = [ClipboardEntry.from_row(r) for r in rows]
+        else:
+            entries = get_recent_entries(limit=100)
         self._list.set_entries(entries)
         self._update_count()
+        return entries
 
     def _update_count(self):
         label = self.findChild(QLabel, "count_label")

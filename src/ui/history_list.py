@@ -176,16 +176,23 @@ class HistoryListWidget(QScrollArea):
         """)
 
     def set_entries(self, entries):
-        self._clear_items()
-        self._seen_fingerprints.clear()
-        for entry in entries:
-            if entry.fingerprint in self._seen_fingerprints:
-                continue
-            self._seen_fingerprints.add(entry.fingerprint)
-            widget = HistoryItemWidget(entry)
-            widget.clicked.connect(self._on_item_clicked)
-            self._items.append(widget)
-            self._layout.insertWidget(self._layout.count() - 1, widget)
+        self.setUpdatesEnabled(False)
+        try:
+            self._clear_items()
+            self._seen_fingerprints.clear()
+            for entry in entries:
+                if entry.fingerprint in self._seen_fingerprints:
+                    continue
+                self._seen_fingerprints.add(entry.fingerprint)
+                widget = HistoryItemWidget(entry)
+                widget.clicked.connect(self._on_item_clicked)
+                self._items.append(widget)
+                self._layout.insertWidget(self._layout.count() - 1, widget)
+            self.scrollToTop()
+        finally:
+            self.setUpdatesEnabled(True)
+            self._container.updateGeometry()
+            self.viewport().update()
 
     def append_entry(self, entry: ClipboardEntry):
         if entry.fingerprint in self._seen_fingerprints:
@@ -202,7 +209,13 @@ class HistoryListWidget(QScrollArea):
 
     def _clear_items(self):
         for widget in self._items:
+            # removeWidget() does not hide a widget, and deleteLater() only
+            # destroys it after control returns to Qt's event loop.  Hide and
+            # detach it synchronously so old and new rows can never be painted
+            # in the same position during a list replacement.
+            widget.hide()
             self._layout.removeWidget(widget)
+            widget.setParent(None)
             widget.deleteLater()
         self._items.clear()
 

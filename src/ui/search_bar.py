@@ -36,3 +36,6 @@ class SearchBar(QLineEdit):
 
     def _emit_search(self):
         self.search_requested.emit(self.text().strip())
+
+    def cancel_pending_search(self):
+        self._debounce_timer.stop()
