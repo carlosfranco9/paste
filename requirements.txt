@@ -1,0 +1,5 @@
+PySide6>=6.5.0
+Pillow>=10.0.0
+python-xlib>=0.29
+pyperclip>=1.8.0
+psutil>=5.9.0

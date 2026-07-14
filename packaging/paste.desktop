@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Paste
+Comment=Clipboard Manager — keeps everything you copy organized and searchable
+Exec=paste
+Icon=paste
+Type=Application
+Categories=Utility;
+Terminal=false
+StartupNotify=false

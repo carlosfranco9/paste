@@ -1,0 +1,26 @@
+[project]
+name = "paste"
+version = "0.1.0"
+description = "Linux clipboard manager — keeps everything you copy organized and searchable."
+requires-python = ">=3.8"
+dependencies = [
+    "PySide2>=5.14.0",
+    "Pillow>=8.0.0",
+    "python-xlib>=0.29",
+    "pyperclip>=1.8.0",
+    "psutil>=5.8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+python_version = "3.8"
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
