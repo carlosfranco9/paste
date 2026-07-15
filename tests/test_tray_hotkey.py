@@ -54,6 +54,14 @@ def test_context_menu_actions_survive_garbage_collection(qt_app):
     assert tray._recent_submenu.parent() is tray.contextMenu()
 
 
+def test_tray_uses_the_project_application_icon(qt_app):
+    tray = TrayManager()
+
+    assert tray._application_icon_path().is_file()
+    assert tray._application_icon_path().name == "paste.png"
+    assert not tray.icon().isNull()
+
+
 def test_recent_menu_loads_five_items_and_emits_selected_id(
     qt_app, monkeypatch
 ):

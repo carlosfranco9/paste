@@ -32,6 +32,7 @@ pip3 install --user --upgrade PySide2 2>/dev/null || true
 echo "Copying application to $DEST_DIR/lib/$APP_NAME/"
 sudo mkdir -p "$DEST_DIR/lib/$APP_NAME"
 sudo cp -r "$SRC_DIR/src" "$DEST_DIR/lib/$APP_NAME/src"
+sudo cp -r "$SRC_DIR/resources" "$DEST_DIR/lib/$APP_NAME/resources"
 sudo cp "$SRC_DIR/pyproject.toml" "$DEST_DIR/lib/$APP_NAME/"
 find "$DEST_DIR/lib/$APP_NAME" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 
@@ -61,8 +62,12 @@ sed -i "s|Exec=paste|Exec=$DEST_DIR/bin/$APP_NAME|g" "$HOME/.local/share/applica
 
 # --- install icon ---
 echo "Installing icon..."
-mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
-cp "$SRC_DIR/packaging/paste.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/$APP_NAME.svg"
+ICON_DIR="$HOME/.local/share/icons/hicolor/512x512/apps"
+mkdir -p "$ICON_DIR"
+cp "$SRC_DIR/resources/icons/paste.png" "$ICON_DIR/$APP_NAME.png"
+if command -v gtk-update-icon-cache &>/dev/null; then
+    gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+fi
 
 # --- autostart ---
 echo "Setting up autostart..."

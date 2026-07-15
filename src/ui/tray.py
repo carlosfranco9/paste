@@ -29,7 +29,10 @@ class TrayManager(QSystemTrayIcon):
     def _setup(self):
         self.setToolTip("Paste — Clipboard Manager")
 
-        icon = QIcon.fromTheme("edit-paste")
+        icon = QIcon(str(self._application_icon_path()))
+        if icon.isNull():
+            logger.warning("Application icon not found; falling back to theme icon")
+            icon = QIcon.fromTheme("edit-paste")
         if icon.isNull():
             icon = self._create_fallback_icon()
         self.setIcon(icon)
@@ -57,6 +60,15 @@ class TrayManager(QSystemTrayIcon):
         self.setContextMenu(self._context_menu)
         self._context_menu.aboutToShow.connect(self._on_context_menu_about_to_show)
         self.activated.connect(self._on_activated)
+
+    @staticmethod
+    def _application_icon_path():
+        return (
+            Path(__file__).resolve().parents[2]
+            / "resources"
+            / "icons"
+            / "paste.png"
+        )
 
     def _on_activated(self, reason):
         reason_names = {

@@ -10,3 +10,5 @@ def test_installed_launcher_does_not_depend_on_current_directory():
     assert 'export PYTHONPATH="\\$APP_DIR' in installer
     assert 'cd "\\$APP_DIR"' in installer
     assert 'python3 -m src.main "\\$@"' in installer
+    assert 'sudo cp -r "$SRC_DIR/resources" "$DEST_DIR/lib/$APP_NAME/resources"' in installer
+    assert 'resources/icons/paste.png' in installer

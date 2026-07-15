@@ -9,6 +9,7 @@
 - 主窗口第二次显示不再重复查询并重建未变化的 100 条列表；show 请求异步合并，并在按键释放前抑制 X11 自动重复（另过滤 250ms 内的重复请求）。
 - 支持单条软删除、确认后清空全部历史，以及 `All / URLs / Images` 类型筛选；类型筛选可与搜索组合。
 - URLs 筛选按内容识别地址并兼容历史 `text` 记录；新复制的 `http/https/ftp/www/纯域名` 会正确分类。
+- 应用与托盘优先使用 `resources/icons/paste.png`；安装时写入用户图标目录的 `hicolor/512x512/apps/paste.png`。
 - `~/.paste/logs/paste.log` 使用 5MB × 5 轮转；UI 超过 8 秒无心跳时将线程堆栈写入 `~/.paste/logs/hang.log`。
 - 日志避免记录剪切板正文。复现卡死后应同时提供 `paste.log`、`hang.log` 和桌面环境信息。
 
