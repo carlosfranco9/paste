@@ -37,9 +37,19 @@ find "$DEST_DIR/lib/$APP_NAME" -name __pycache__ -type d -exec rm -rf {} + 2>/de
 
 # --- install launcher script ---
 echo "Creating launcher..."
-sudo tee "$DEST_DIR/bin/$APP_NAME" > /dev/null <<'LAUNCHER'
+sudo tee "$DEST_DIR/bin/$APP_NAME" > /dev/null <<LAUNCHER
 #!/usr/bin/env bash
-exec python3 -m src.main "$@"
+set -euo pipefail
+
+APP_DIR="$DEST_DIR/lib/$APP_NAME"
+if [[ ! -d "\$APP_DIR/src" ]]; then
+    echo "Paste installation is incomplete: \$APP_DIR/src not found" >&2
+    exit 1
+fi
+
+export PYTHONPATH="\$APP_DIR\${PYTHONPATH:+:\$PYTHONPATH}"
+cd "\$APP_DIR"
+exec python3 -m src.main "\$@"
 LAUNCHER
 sudo chmod +x "$DEST_DIR/bin/$APP_NAME"
 

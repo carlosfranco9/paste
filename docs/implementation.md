@@ -354,6 +354,28 @@ pyinstaller paste.spec
 ./Paste-x86_64.AppImage
 ```
 
+### 安装版无法启动排查
+
+安装后的启动器位于 `/usr/local/bin/paste`，应用代码默认位于 `/usr/local/lib/paste`。启动器必须把应用目录加入 `PYTHONPATH`，不能依赖启动时的当前目录。
+
+```bash
+# 1. 直接在终端运行，查看日志初始化前的错误
+/usr/local/bin/paste --show
+
+# 2. 验证安装文件和启动器
+sed -n '1,80p' /usr/local/bin/paste
+ls -la /usr/local/lib/paste/src
+
+# 3. 查看应用已经启动后的日志
+tail -n 300 ~/.paste/logs/paste.log
+tail -n 300 ~/.paste/logs/hang.log
+
+# 4. 查看桌面启动器相关的用户会话日志
+journalctl --user --since "10 minutes ago" | grep -i paste
+```
+
+如果终端提示 `No module named src`，说明使用的是旧启动器；回到项目目录重新执行 `bash packaging/install.sh`。如果错误发生在日志初始化之前，`~/.paste/logs/paste.log` 不会出现新的记录，应以终端错误为准。
+
 ---
 
 ## 测试指南
