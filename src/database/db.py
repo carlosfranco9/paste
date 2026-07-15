@@ -3,6 +3,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
+from src.utils.url import contains_url
+
 DATA_DIR = Path.home() / ".paste"
 DB_PATH = DATA_DIR / "paste.db"
 
@@ -22,6 +24,12 @@ class DatabaseManager:
     def _init(self):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        self.conn.create_function(
+            "paste_contains_url",
+            1,
+            lambda value: 1 if contains_url(value) else 0,
+            deterministic=True,
+        )
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA busy_timeout=5000")

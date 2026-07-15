@@ -10,6 +10,7 @@ from src.database.models import (
     get_exclusion_rules, ClipboardEntry,
 )
 from src.utils.dedup import normalize_text
+from src.utils.url import is_url_content
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class ClipProcessor:
             return None
         self._dedup_cache.add(fp)
 
-        entry_type = "link" if text.startswith(("http://", "https://")) else "text"
+        entry_type = "link" if is_url_content(text) else "text"
         entry = ClipboardEntry(
             id="",
             type=entry_type,

@@ -2,6 +2,7 @@ import re
 from typing import Optional, List
 
 from src.database.db import DatabaseManager
+from src.database.models import URL_FILTER_CONDITION
 
 
 def search_entries(
@@ -22,8 +23,11 @@ def search_entries(
     params.extend([like_pattern, like_pattern])
 
     if entry_type:
-        conditions.append("e.type=?")
-        params.append(entry_type)
+        if entry_type == "link":
+            conditions.append(URL_FILTER_CONDITION)
+        else:
+            conditions.append("e.type=?")
+            params.append(entry_type)
 
     where = " AND ".join(conditions)
     sql = f"SELECT e.* FROM entries e WHERE {where} ORDER BY e.updated_at DESC LIMIT ? OFFSET ?"
@@ -43,10 +47,17 @@ def fts_search(
 def count_entries(entry_type: Optional[str] = None) -> int:
     db = DatabaseManager()
     if entry_type:
-        row = db.fetchone(
-            "SELECT COUNT(*) FROM entries WHERE type=? AND is_deleted=0",
-            (entry_type,),
-        )
+        if entry_type == "link":
+            row = db.fetchone(
+                f"SELECT COUNT(*) FROM entries e "
+                f"WHERE e.is_deleted=0 AND {URL_FILTER_CONDITION}"
+            )
+        else:
+            row = db.fetchone(
+                "SELECT COUNT(*) FROM entries e "
+                "WHERE e.type=? AND e.is_deleted=0",
+                (entry_type,),
+            )
     else:
         row = db.fetchone(
             "SELECT COUNT(*) FROM entries WHERE is_deleted=0"

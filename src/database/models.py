@@ -7,6 +7,12 @@ from src.database.db import DatabaseManager
 
 EntryType = Literal["text", "image", "file", "link"]
 
+URL_FILTER_CONDITION = """(
+    e.type='link'
+    OR paste_contains_url(e.content)=1
+    OR paste_contains_url(COALESCE(e.plain_text, ''))=1
+)"""
+
 
 @dataclass
 class ClipboardEntry:
@@ -99,8 +105,11 @@ def get_recent_entries(
     params: list = []
 
     if entry_type:
-        conditions.append("e.type=?")
-        params.append(entry_type)
+        if entry_type == "link":
+            conditions.append(URL_FILTER_CONDITION)
+        else:
+            conditions.append("e.type=?")
+            params.append(entry_type)
     if pinned_only:
         conditions.append("e.pinned=1")
     if pinboard_id:

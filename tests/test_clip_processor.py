@@ -64,6 +64,35 @@ class TestClipProcessor:
         assert entry is not None
         assert entry.type == "link"
 
+    @pytest.mark.parametrize(
+        "value",
+        ["ftp://example.com/file", "www.example.com/path", "example.cn/docs"],
+    )
+    def test_process_additional_url_formats(self, value):
+        data = ClipboardData(
+            mime_type="text/plain",
+            raw_data=value.encode(),
+            text=value,
+        )
+
+        entry = self.processor.process(data)
+
+        assert entry is not None
+        assert entry.type == "link"
+
+    def test_text_containing_url_remains_text_for_safe_preview(self):
+        value = "See https://example.com for details"
+        data = ClipboardData(
+            mime_type="text/plain",
+            raw_data=value.encode(),
+            text=value,
+        )
+
+        entry = self.processor.process(data)
+
+        assert entry is not None
+        assert entry.type == "text"
+
     def test_dedup_same_content_returns_none(self):
         data1 = ClipboardData(
             mime_type="text/plain",

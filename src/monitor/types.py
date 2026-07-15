@@ -2,6 +2,8 @@ from typing import Optional, List
 from dataclasses import dataclass, field
 from enum import Enum
 
+from src.utils.url import is_url_content
+
 
 class ContentType(Enum):
     TEXT = "text"
@@ -27,7 +29,7 @@ class ClipboardData:
         if self.mime_type == "text/uri-list" and self.file_paths:
             return ContentType.FILE
         if self.text:
-            if self.text.strip().startswith(("http://", "https://", "ftp://")):
+            if is_url_content(self.text):
                 return ContentType.LINK
             return ContentType.TEXT
         return ContentType.TEXT

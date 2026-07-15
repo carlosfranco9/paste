@@ -15,6 +15,7 @@ from src.database.models import (
     insert_entry, get_entry_by_fingerprint, get_recent_entries,
     toggle_pin, delete_entry, clear_entries, ClipboardEntry,
 )
+from src.database.search import count_entries, search_entries
 
 
 @pytest.fixture(autouse=True)
@@ -98,3 +99,28 @@ class TestDatabase:
 
         assert clear_entries() == 2
         assert get_recent_entries() == []
+
+    def test_url_filter_includes_legacy_text_entries_containing_address(self):
+        url_text = ClipboardEntry(
+            id=uuid.uuid4().hex,
+            type="text",
+            content="Documentation: https://docs.example.com/guide",
+            plain_text="Documentation: https://docs.example.com/guide",
+            fingerprint="legacy-url-text",
+        )
+        normal_text = ClipboardEntry(
+            id=uuid.uuid4().hex,
+            type="text",
+            content="Documentation without an address",
+            plain_text="Documentation without an address",
+            fingerprint="normal-text",
+        )
+        insert_entry(url_text)
+        insert_entry(normal_text)
+
+        filtered = get_recent_entries(entry_type="link")
+        searched = search_entries("docs.example", entry_type="link")
+
+        assert [entry.id for entry in filtered] == [url_text.id]
+        assert [row[0] for row in searched] == [url_text.id]
+        assert count_entries("link") == 1
