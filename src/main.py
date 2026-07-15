@@ -31,6 +31,7 @@ from src.ui.main_window import MainWindow
 from src.ui.tray import TrayManager
 from src.monitor.monitor_manager import MonitorManager
 from src.monitor.clip_processor import ClipProcessor
+from src.storage.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +61,17 @@ def main():
     signal.signal(signal.SIGINT, lambda s, f: None)
 
     window = MainWindow()
-    tray = TrayManager()
+    hotkey = config.get("hotkeys", "toggle_window", default="Ctrl+Shift+V")
+    tray = TrayManager(hotkey=hotkey)
     monitor = MonitorManager()
 
     clip_processor = ClipProcessor()
 
     tray.show_requested.connect(window.toggle_visibility)
+    tray.recent_entry_requested.connect(window.copy_entry_by_id)
+    tray.hotkey_settings_requested.connect(window.open_hotkey_settings)
     tray.quit_requested.connect(app.quit)
+    window.hotkey_changed.connect(tray.set_hotkey)
 
     monitor.clip_changed.connect(window.add_clipboard_data)
 

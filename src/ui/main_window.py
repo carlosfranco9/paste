@@ -1,16 +1,17 @@
 import hashlib
 import logging
 
-from PySide2.QtCore import Qt, QTimer, QPoint, QBuffer
+from PySide2.QtCore import Qt, QTimer, QPoint, QBuffer, Signal
 from PySide2.QtGui import QFont, QKeySequence, QPixmap
 from PySide2.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QApplication,
-    QLabel, QPushButton, QFrame, QSizePolicy, QShortcut,
+    QLabel, QPushButton, QFrame, QSizePolicy, QShortcut, QMessageBox,
 )
 
 from src.ui.search_bar import SearchBar
 from src.ui.history_list import HistoryListWidget
 from src.ui.preview import PreviewPanel
+from src.ui.settings.hotkey_dialog import HotkeyDialog
 from src.database.models import get_recent_entries, ClipboardEntry, get_entry_by_id
 from src.database.search import fts_search, count_entries
 from src.storage.config import config
@@ -77,6 +78,8 @@ QScrollBar:horizontal { height: 0; }
 
 
 class MainWindow(QWidget):
+    hotkey_changed = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._clip_processor = ClipProcessor()
@@ -264,12 +267,52 @@ class MainWindow(QWidget):
             self._preview.show_entry(entry)
             self._write_to_clipboard(entry)
 
+    def copy_entry_by_id(self, entry_id):
+        row = get_entry_by_id(entry_id)
+        if not row:
+            return False
+        return self._write_to_clipboard(ClipboardEntry.from_row(row))
+
+    def open_hotkey_settings(self):
+        if not self._hotkey.supports_global_hotkey:
+            QMessageBox.information(
+                self,
+                "Configure Hotkey",
+                "Paste cannot register global hotkeys directly on Wayland.\n\n"
+                "Open your desktop keyboard settings, add a custom shortcut, "
+                "and use this command:\n\n"
+                "paste --show",
+            )
+            return
+
+        current = config.get(
+            "hotkeys", "toggle_window", default="Ctrl+Shift+V"
+        )
+        dialog = HotkeyDialog(current, self)
+
+        def apply_hotkey(hotkey):
+            if not self._hotkey.rebind(hotkey):
+                error = self._hotkey.last_error or "The hotkey is already in use."
+                dialog.show_error(f"Could not register this hotkey: {error}")
+                return
+            try:
+                config.set("hotkeys", "toggle_window", hotkey)
+            except OSError as error:
+                self._hotkey.rebind(current)
+                dialog.show_error(f"Could not save the hotkey: {error}")
+                return
+            self.hotkey_changed.emit(hotkey)
+            dialog.accept()
+
+        dialog.hotkey_submitted.connect(apply_hotkey)
+        dialog.exec_()
+
     def _write_to_clipboard(self, entry):
         clipboard = QApplication.clipboard()
         if entry.type == "image":
             pix = QPixmap(entry.content)
             if pix.isNull():
-                return
+                return False
             buf = QBuffer()
             buf.open(QBuffer.WriteOnly)
             pix.save(buf, "PNG")
@@ -279,3 +322,4 @@ class MainWindow(QWidget):
         else:
             self._skip_fingerprint = hashlib.sha256(entry.content.encode()).hexdigest()
             clipboard.setText(entry.content)
+        return True
