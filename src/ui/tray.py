@@ -46,18 +46,38 @@ class TrayManager(QSystemTrayIcon):
         self._hotkey_action.triggered.connect(self.hotkey_settings_requested.emit)
         self._context_menu.addAction(self._hotkey_action)
 
+        self._recent_submenu = QMenu("Recent", self._context_menu)
+        self._context_menu.addMenu(self._recent_submenu)
+
         self._context_menu.addSeparator()
         self._quit_action = QAction("Quit", self._context_menu)
         self._quit_action.triggered.connect(self.quit_requested.emit)
         self._context_menu.addAction(self._quit_action)
 
         self.setContextMenu(self._context_menu)
+        self._context_menu.aboutToShow.connect(self._on_context_menu_about_to_show)
         self.activated.connect(self._on_activated)
 
     def _on_activated(self, reason):
+        reason_names = {
+            QSystemTrayIcon.ActivationReason.Unknown: "Unknown",
+            QSystemTrayIcon.ActivationReason.Context: "Context",
+            QSystemTrayIcon.ActivationReason.DoubleClick: "DoubleClick",
+            QSystemTrayIcon.ActivationReason.Trigger: "Trigger",
+            QSystemTrayIcon.ActivationReason.MiddleClick: "MiddleClick",
+        }
+        logger.info(
+            "Tray activated: reason=%s(%s)",
+            reason_names.get(reason, "unmapped"),
+            int(reason),
+        )
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self._rebuild_recent_menu()
             self._recent_menu.popup(QCursor.pos())
+
+    def _on_context_menu_about_to_show(self):
+        logger.info("Tray context menu opening")
+        self._populate_recent_menu(self._recent_submenu)
 
     def _rebuild_recent_menu(self):
         if self._recent_menu is not None:
@@ -65,27 +85,40 @@ class TrayManager(QSystemTrayIcon):
             self._recent_menu.deleteLater()
 
         self._recent_menu = QMenu()
-        self._recent_actions = []
+        self._populate_recent_menu(self._recent_menu, track_actions=True)
+
+    def _populate_recent_menu(self, menu, track_actions=False):
+        menu.clear()
+        if track_actions:
+            self._recent_actions = []
         entries = get_recent_entries(limit=5)
+        logger.debug("Building recent tray menu: rows=%d", len(entries))
 
         if not entries:
-            action = QAction("No recent items", self._recent_menu)
+            action = QAction("No recent items", menu)
             action.setEnabled(False)
-            self._recent_menu.addAction(action)
-            self._recent_actions.append(action)
+            menu.addAction(action)
+            if track_actions:
+                self._recent_actions.append(action)
             return
 
         for entry in entries:
-            action = QAction(self._format_entry(entry), self._recent_menu)
+            action = QAction(self._format_entry(entry), menu)
             action.setData(entry.id)
             action.triggered.connect(
                 lambda checked=False, entry_id=entry.id:
-                self.recent_entry_requested.emit(entry_id)
+                self._select_recent_entry(entry_id)
             )
-            self._recent_menu.addAction(action)
-            self._recent_actions.append(action)
+            menu.addAction(action)
+            if track_actions:
+                self._recent_actions.append(action)
+
+    def _select_recent_entry(self, entry_id):
+        logger.info("Recent tray entry selected: id=%s", entry_id)
+        self.recent_entry_requested.emit(entry_id)
 
     def set_hotkey(self, hotkey):
+        logger.info("Tray hotkey label updated: %s", hotkey)
         self._hotkey = hotkey
         self._show_action.setText(self._show_action_text())
 

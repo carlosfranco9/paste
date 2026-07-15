@@ -25,6 +25,15 @@ sys.stderr = _StderrFilter()
 
 from PySide2.QtCore import QTimer
 
+from src.utils.diagnostics import (
+    HangWatchdog,
+    configure_logging,
+    install_exception_hooks,
+)
+
+configure_logging(debug=bool(os.environ.get("PASTE_DEBUG")))
+install_exception_hooks()
+
 from src.app import PasteApplication
 from src.database.models import dedup_entries
 from src.ui.main_window import MainWindow
@@ -37,7 +46,10 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    logger.info("Paste starting: argv=%r", sys.argv)
     app = PasteApplication(sys.argv)
+    watchdog = HangWatchdog()
+    watchdog.start()
 
     import fcntl
     sig_r, sig_w = os.pipe()
@@ -49,7 +61,10 @@ def main():
         try:
             data = os.read(sig_r, 65536)
             if data:
-                logger.info("SIGINT received, quitting...")
+                logger.info(
+                    "Termination signal received: signals=%s; quitting...",
+                    list(data),
+                )
                 app.quit()
         except (BlockingIOError, OSError):
             pass
@@ -59,6 +74,7 @@ def main():
     poller.start(300)
 
     signal.signal(signal.SIGINT, lambda s, f: None)
+    signal.signal(signal.SIGTERM, lambda s, f: None)
 
     window = MainWindow()
     hotkey = config.get("hotkeys", "toggle_window", default="Ctrl+Shift+V")
@@ -67,7 +83,9 @@ def main():
 
     clip_processor = ClipProcessor()
 
-    tray.show_requested.connect(window.toggle_visibility)
+    tray.show_requested.connect(
+        lambda: window.toggle_visibility("tray-context-menu")
+    )
     tray.recent_entry_requested.connect(window.copy_entry_by_id)
     tray.hotkey_settings_requested.connect(window.open_hotkey_settings)
     tray.quit_requested.connect(app.quit)
@@ -82,16 +100,17 @@ def main():
     if "--show" in sys.argv:
         window.toggle_visibility()
 
-    app.aboutToQuit.connect(lambda: cleanup(monitor, window, tray))
+    app.aboutToQuit.connect(lambda: cleanup(monitor, window, tray, watchdog))
 
     sys.exit(app.exec_())
 
 
-def cleanup(monitor, window, tray):
+def cleanup(monitor, window, tray, watchdog):
     logger.info("Shutting down...")
     monitor.stop()
     window.hide()
     tray.hide()
+    watchdog.stop()
 
 
 if __name__ == "__main__":

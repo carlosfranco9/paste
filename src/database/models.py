@@ -161,12 +161,23 @@ def dedup_entries():
 def delete_entry(entry_id: str, hard: bool = False):
     db = DatabaseManager()
     if hard:
-        db.execute("DELETE FROM entries WHERE id=?", (entry_id,))
+        cursor = db.execute("DELETE FROM entries WHERE id=?", (entry_id,))
     else:
-        db.execute(
-            "UPDATE entries SET is_deleted=1 WHERE id=?", (entry_id,)
+        cursor = db.execute(
+            "UPDATE entries SET is_deleted=1 WHERE id=? AND is_deleted=0",
+            (entry_id,),
         )
     db.commit()
+    return cursor.rowcount > 0
+
+
+def clear_entries() -> int:
+    db = DatabaseManager()
+    cursor = db.execute(
+        "UPDATE entries SET is_deleted=1 WHERE is_deleted=0"
+    )
+    db.commit()
+    return cursor.rowcount
 
 
 # --- Pinboard operations ---

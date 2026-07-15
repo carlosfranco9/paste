@@ -10,9 +10,10 @@ os.environ.setdefault("XDG_SESSION_TYPE", "wayland")
 
 import pytest
 from PySide2.QtCore import QEventLoop, QTimer
-from PySide2.QtWidgets import QApplication
+from PySide2.QtWidgets import QApplication, QMessageBox, QPushButton
 
 from src.database.models import ClipboardEntry
+from src.ui.filter_bar import FilterBar
 from src.ui.history_list import HistoryItemWidget, HistoryListWidget
 from src.ui.main_window import MainWindow
 from src.ui.search_bar import SearchBar
@@ -76,9 +77,11 @@ def test_initial_history_load_happens_once_when_window_is_shown(
     loads = []
     monkeypatch.setattr(
         "src.ui.main_window.get_recent_entries",
-        lambda limit: loads.append(limit) or [],
+        lambda limit, entry_type=None: loads.append(limit) or [],
     )
-    monkeypatch.setattr("src.ui.main_window.count_entries", lambda: 0)
+    monkeypatch.setattr(
+        "src.ui.main_window.count_entries", lambda entry_type=None: 0
+    )
 
     window = MainWindow()
     assert loads == []
@@ -86,6 +89,10 @@ def test_initial_history_load_happens_once_when_window_is_shown(
     window.show()
     qt_app.processEvents()
 
+    assert loads == [100]
+    window.hide()
+    window.show()
+    qt_app.processEvents()
     assert loads == [100]
     window.close()
 
@@ -145,3 +152,113 @@ def test_new_entry_refreshes_active_search_instead_of_polluting_results():
     MainWindow.add_clipboard_data(window, data)
 
     assert calls == [("refresh", "needle")]
+
+
+def test_filter_bar_exposes_all_url_and_image_filters(qt_app):
+    filters = FilterBar()
+    selected = []
+    filters.filter_changed.connect(selected.append)
+
+    filters._buttons["link"].click()
+    filters._buttons["image"].click()
+    filters._buttons["all"].click()
+
+    assert selected == ["link", "image", "all"]
+    assert filters.current_filter == "all"
+
+
+def test_refresh_applies_type_filter_to_database_query(monkeypatch):
+    calls = []
+    window = SimpleNamespace(
+        _active_filter="link",
+        _list=SimpleNamespace(set_entries=lambda entries: calls.append(entries)),
+        _update_count=lambda entry_type: calls.append(("count", entry_type)),
+    )
+    monkeypatch.setattr(
+        "src.ui.main_window.get_recent_entries",
+        lambda limit, entry_type: calls.append((limit, entry_type)) or [],
+    )
+
+    MainWindow._refresh_list(window)
+
+    assert calls == [(100, "link"), [], ("count", "link")]
+    assert window._list_loaded
+    assert not window._list_dirty
+
+
+def test_history_item_delete_button_emits_entry_id(qt_app):
+    entry = make_entries("delete", count=1)[0]
+    widget = HistoryItemWidget(entry)
+    deleted = []
+    widget.delete_requested.connect(deleted.append)
+
+    widget.findChild(QPushButton, "delete_button").click()
+
+    assert deleted == [entry.id]
+
+
+def test_deleting_entry_refreshes_current_view(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "src.ui.main_window.delete_entry",
+        lambda entry_id: calls.append(("delete", entry_id)) or True,
+    )
+    window = SimpleNamespace(
+        _recent_hashes={"hash"},
+        _preview=SimpleNamespace(
+            current_entry_id="entry-1",
+            clear=lambda: calls.append("preview-clear"),
+        ),
+        _list_dirty=False,
+        _search_bar=SimpleNamespace(text=lambda: "query"),
+        _refresh_list=lambda query: calls.append(("refresh", query)),
+    )
+
+    MainWindow._delete_entry(window, "entry-1")
+
+    assert calls == [
+        ("delete", "entry-1"),
+        "preview-clear",
+        ("refresh", "query"),
+    ]
+    assert window._recent_hashes == set()
+
+
+def test_clear_history_requires_confirmation_and_refreshes(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "src.ui.main_window.QMessageBox.question",
+        lambda *args: QMessageBox.Yes,
+    )
+    monkeypatch.setattr(
+        "src.ui.main_window.clear_entries",
+        lambda: calls.append("clear-db") or 3,
+    )
+    window = SimpleNamespace(
+        _recent_hashes={"hash"},
+        _preview=SimpleNamespace(clear=lambda: calls.append("preview-clear")),
+        _list_dirty=False,
+        _search_bar=SimpleNamespace(text=lambda: ""),
+        _refresh_list=lambda query: calls.append(("refresh", query)),
+    )
+
+    MainWindow._clear_history(window)
+
+    assert calls == ["clear-db", "preview-clear", ("refresh", "")]
+    assert window._recent_hashes == set()
+
+
+def test_rapid_duplicate_show_requests_are_coalesced(qt_app):
+    calls = []
+    window = SimpleNamespace(
+        _last_toggle_at=0.0,
+        _show_pending=False,
+        isVisible=lambda: False,
+        _show_window=lambda source: calls.append(source),
+    )
+
+    MainWindow.toggle_visibility(window, "hotkey")
+    MainWindow.toggle_visibility(window, "hotkey")
+    qt_app.processEvents()
+
+    assert calls == ["hotkey"]

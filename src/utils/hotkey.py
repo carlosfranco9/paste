@@ -23,6 +23,7 @@ class HotkeyManager(QObject):
         self._registered = False
         self._current_hotkey = None
         self._last_error = ""
+        self._key_is_down = False
 
     @property
     def current_hotkey(self):
@@ -172,12 +173,20 @@ class HotkeyManager(QObject):
         try:
             while self._disp.pending_events():
                 event = self._disp.next_event()
+                if event.type not in (X.KeyPress, X.KeyRelease):
+                    continue
+                if event.detail != self._keycode:
+                    continue
+                if event.type == X.KeyRelease:
+                    self._key_is_down = False
+                    continue
                 if event.type == X.KeyPress:
-                    if (event.detail == self._keycode and
-                            event.state & ~(X.Mod2Mask | X.LockMask) ==
-                            self._modifiers):
-                        self.activated.emit()
-                        return True
+                    modifiers = event.state & ~(X.Mod2Mask | X.LockMask)
+                    if modifiers != self._modifiers or self._key_is_down:
+                        continue
+                    self._key_is_down = True
+                    self.activated.emit()
+                    return True
         except Exception:
             pass
         return False
@@ -190,3 +199,4 @@ class HotkeyManager(QObject):
         self._keycode = None
         self._modifiers = None
         self._current_hotkey = None
+        self._key_is_down = False

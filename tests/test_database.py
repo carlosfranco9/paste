@@ -13,7 +13,7 @@ import pytest
 from src.database.db import DatabaseManager, DATA_DIR, DB_PATH
 from src.database.models import (
     insert_entry, get_entry_by_fingerprint, get_recent_entries,
-    toggle_pin, delete_entry, ClipboardEntry,
+    toggle_pin, delete_entry, clear_entries, ClipboardEntry,
 )
 
 
@@ -85,3 +85,16 @@ class TestDatabase:
 
         entries = get_recent_entries()
         assert len(entries) == 0
+
+    def test_clear_entries(self, sample_entry):
+        insert_entry(sample_entry)
+        second = ClipboardEntry(
+            id=uuid.uuid4().hex,
+            type="link",
+            content="https://example.com",
+            fingerprint="second",
+        )
+        insert_entry(second)
+
+        assert clear_entries() == 2
+        assert get_recent_entries() == []

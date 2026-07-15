@@ -604,24 +604,22 @@ class PollingMonitor(QObject):
 
 #### 6.5.3 系统托盘
 
-```python
-class TrayManager(QObject):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.tray = QSystemTrayIcon()
-        self.tray.setIcon(QIcon(":/icons/paste.svg"))
-        self.tray.setToolTip("Paste — 剪切板管理器")
-        self.tray.activated.connect(self._on_activate)
+当前交互：
 
-        menu = QMenu()
-        menu.addAction("显示/隐藏 (Ctrl+Shift+V)", self._toggle_window)
-        menu.addSeparator()
-        menu.addAction("设置", self._open_settings)
-        menu.addAction("退出", self._quit)
-        self.tray.setContextMenu(menu)
-```
+- 左键 `Trigger`：动态查询并弹出最近 5 条记录；选择后写回系统剪切板。
+- 右键 `Context`：显示/隐藏主窗口、配置热键、Recent 备用子菜单和退出。
+- 菜单及 `QAction` 必须保存为 `TrayManager` 实例成员并设置父对象，防止 PySide 回收后菜单只剩分隔线。
+- 每次激活记录 `ActivationReason`，用于判断桌面 Shell 实际送达的是左键还是右键事件。
 
-**注意：** KDE Plasma 6 已弃用 XEmbed 托盘，使用 StatusNotifier 协议。PySide6 的 `QSystemTrayIcon` 基于 `QDBusTrayIcon`，对此支持良好。GNOME 需要 `AppIndicator` 扩展。
+Qt 能在支持完整托盘协议的桌面区分 `Trigger` 与 `Context`。但 GNOME 的 AppIndicator/StatusNotifier 扩展可能把主键和右键统一映射到上下文菜单，应用无法绕过 Shell 强制拆分。因此右键菜单同时提供 Recent 子菜单作为兼容回退。KDE/X11 等能提供 `Trigger` 的环境仍保持左右键不同功能。
+
+#### 6.5.4 删除与内容筛选
+
+- 每条历史记录提供删除按钮，使用软删除 `is_deleted=1`，删除后立即刷新当前搜索和类型筛选。
+- 标题栏提供“Clear All”，二次确认后软删除全部历史；媒体文件仍由存储清理任务统一回收。
+- 主列表提供 `All / URLs / Images` 三个筛选栏目，分别映射到无类型限制、`link`、`image`。
+- 搜索关键词与类型筛选可以组合，数据库查询同时应用 `LIKE` 条件和 `entry_type` 条件。
+- 删除或清空后清除进程内短期去重缓存，允许用户再次复制相同内容。
 
 ### 6.6 存储与文件管理 (`storage/`)
 
@@ -764,6 +762,11 @@ class HotkeyManager(QObject):
 | XFixes 连接断开 | 重新连接 Display，恢复事件监听 |
 | 权限不足 | 提示用户检查 ~/.paste/ 目录权限 |
 | 大文件卡住 (> 100MB) | 设置超时 5s → 取消读取 → 跳过该条目 |
+| UI 事件循环卡死 | 8 秒无心跳时由后台 watchdog 把所有线程堆栈写入 `~/.paste/logs/hang.log` |
+| 未捕获异常 | `sys.excepthook` / `threading.excepthook` 记录完整 traceback |
+| 日志增长 | `paste.log` 单文件 5MB，保留 5 个轮转备份 |
+
+运行日志位于 `~/.paste/logs/paste.log`，记录启动、托盘激活原因、窗口 show/hide、列表刷新耗时、筛选、删除和清空操作。日志只记录记录 ID、类型、数量和耗时，不记录剪切板正文。Linux 下可向进程发送 `SIGUSR2`，主动把所有线程堆栈写入 `hang.log`。
 
 ---
 
@@ -772,7 +775,7 @@ class HotkeyManager(QObject):
 1. **敏感数据过滤：** 默认排除密码管理器 (KeePassXC, Bitwarden, 1Password) 的复制操作。检测方式：来源应用名匹配 + 内容正则匹配 `(?i)^(password|secret|token)`
 2. **数据本地存储：** 所有数据在 `~/.paste/`，文件权限建议 `0700`
 3. **不记录密码字段：** HTML 表单中 `type=password` 对应的文本通过内容分析可部分识别
-4. **清理策略：** 默认自动清理 30 天前的非收藏条目，用户可选中"立即清除所有"（含图片文件删除）
+4. **清理策略：** 默认自动清理 30 天前的非收藏条目；“Clear All”软删除数据库历史，媒体文件由后续存储清理任务回收
 5. **启动时不自启：** 用户主动选择"开机启动"后才写入 autostart `.desktop` 文件
 
 ---

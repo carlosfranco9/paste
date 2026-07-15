@@ -2,6 +2,15 @@
 
 本文档是 architecture.md 的实施落地指南。按阶段拆分任务，标注依赖、预计工时、验收标准与已知障碍。
 
+## 当前实现状态（2026-07-15）
+
+- 托盘左键显示最近 5 条，右键提供显示/隐藏、热键配置、Recent 兼容入口和退出。
+- Ubuntu GNOME 的 AppIndicator 后端可能无法区分左右键；应用会记录实际 `ActivationReason`，右键 Recent 子菜单作为回退。
+- 主窗口第二次显示不再重复查询并重建未变化的 100 条列表；show 请求异步合并，并在按键释放前抑制 X11 自动重复（另过滤 250ms 内的重复请求）。
+- 支持单条软删除、确认后清空全部历史，以及 `All / URLs / Images` 类型筛选；类型筛选可与搜索组合。
+- `~/.paste/logs/paste.log` 使用 5MB × 5 轮转；UI 超过 8 秒无心跳时将线程堆栈写入 `~/.paste/logs/hang.log`。
+- 日志避免记录剪切板正文。复现卡死后应同时提供 `paste.log`、`hang.log` 和桌面环境信息。
+
 ---
 
 ## Phase 0: 原型验证 (1 天)
@@ -182,6 +191,8 @@
 | 3.3.2 | 全局异常捕获 + 崩溃恢复 | 1h |
 | 3.3.3 | 用户友好的错误通知 | 1h |
 
+已落地：3.3.1、全局异常 hook、UI hang watchdog、`SIGUSR2` 手动线程堆栈；用户通知仍按具体错误场景逐步补充。
+
 ### 3.4 打包分发 (1d)
 
 | # | 任务 | 工时 |
@@ -318,6 +329,17 @@ python src/main.py
 ```bash
 PASTE_DEBUG=1 python src/main.py
 # 日志输出到 ~/.paste/logs/paste.log
+# UI 卡死线程堆栈输出到 ~/.paste/logs/hang.log
+```
+
+复现卡死后收集：
+
+```bash
+tail -n 300 ~/.paste/logs/paste.log
+tail -n 300 ~/.paste/logs/hang.log
+
+# 进程仍存活时可手动抓取所有线程堆栈
+kill -USR2 <paste-pid>
 ```
 
 ### 打包运行

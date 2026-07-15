@@ -17,6 +17,7 @@ from src.ui.main_window import MainWindow
 from src.ui.settings.hotkey_dialog import HotkeyDialog
 from src.ui.tray import TrayManager
 from src.utils.hotkey import HotkeyManager
+from src.utils import hotkey as hotkey_module
 
 
 @pytest.fixture(scope="module")
@@ -43,10 +44,14 @@ def test_context_menu_actions_survive_garbage_collection(qt_app):
     assert [action.text() for action in actions] == [
         "Show/Hide (Ctrl+Shift+V)",
         "Configure Hotkey...",
+        "Recent",
         "",
         "Quit",
     ]
-    assert all(action.parent() is tray.contextMenu() for action in actions)
+    assert tray._show_action.parent() is tray.contextMenu()
+    assert tray._hotkey_action.parent() is tray.contextMenu()
+    assert tray._quit_action.parent() is tray.contextMenu()
+    assert tray._recent_submenu.parent() is tray.contextMenu()
 
 
 def test_recent_menu_loads_five_items_and_emits_selected_id(
@@ -191,6 +196,48 @@ def test_x11_grab_error_is_reported_as_hotkey_conflict(monkeypatch):
     assert not manager._register_x11("Ctrl+Shift+V")
     assert manager.last_error == "The hotkey is already in use."
     assert fake_display.closed
+
+
+def test_hotkey_auto_repeat_is_ignored_until_key_release(qt_app):
+    keycode = 55
+    modifiers = hotkey_module.X.ControlMask
+    events = [
+        SimpleNamespace(
+            type=hotkey_module.X.KeyPress,
+            detail=keycode,
+            state=modifiers,
+        ),
+        SimpleNamespace(
+            type=hotkey_module.X.KeyPress,
+            detail=keycode,
+            state=modifiers,
+        ),
+        SimpleNamespace(
+            type=hotkey_module.X.KeyRelease,
+            detail=keycode,
+            state=modifiers,
+        ),
+        SimpleNamespace(
+            type=hotkey_module.X.KeyPress,
+            detail=keycode,
+            state=modifiers,
+        ),
+    ]
+    manager = HotkeyManager()
+    manager._registered = True
+    manager._keycode = keycode
+    manager._modifiers = modifiers
+    manager._disp = SimpleNamespace(
+        pending_events=lambda: len(events),
+        next_event=lambda: events.pop(0),
+    )
+    activations = []
+    manager.activated.connect(lambda: activations.append("activated"))
+
+    assert manager.poll_event()
+    assert manager.poll_event()
+
+    assert activations == ["activated", "activated"]
 
 
 def test_wayland_hotkey_settings_show_guidance_without_saving(monkeypatch):

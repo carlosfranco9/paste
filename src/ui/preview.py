@@ -13,6 +13,7 @@ from src.database.models import ClipboardEntry
 class PreviewPanel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.current_entry_id = None
         self._setup_ui()
         self.setMinimumWidth(280)
         self.setMaximumWidth(400)
@@ -58,6 +59,7 @@ class PreviewPanel(QFrame):
         layout.addWidget(self._meta_label)
 
     def show_entry(self, entry: ClipboardEntry):
+        self.current_entry_id = entry.id
         self._update_meta(entry)
         self._clear_content()
 
@@ -119,6 +121,17 @@ class PreviewPanel(QFrame):
             item = self._content_layout.takeAt(0)
             if item and item.widget():
                 item.widget().deleteLater()
+
+    def clear(self):
+        self.current_entry_id = None
+        self._meta_label.clear()
+        self._clear_content()
+        label = QLabel("Select an item to preview")
+        label.setWordWrap(True)
+        label.setFont(QFont("", 10))
+        label.setStyleSheet("color: #888;")
+        label.setAlignment(Qt.AlignCenter)
+        self._content_layout.insertWidget(0, label)
 
     @staticmethod
     def _format_size(size: int) -> str:

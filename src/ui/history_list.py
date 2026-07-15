@@ -1,4 +1,5 @@
 import logging
+import time
 from pathlib import Path
 
 from PySide2.QtCore import Qt, QSize, Signal, QRect
@@ -107,6 +108,28 @@ class HistoryItemWidget(QFrame):
             pin_label.setFixedSize(20, 20)
             layout.addWidget(pin_label)
 
+        delete_button = QPushButton("✕")
+        delete_button.setObjectName("delete_button")
+        delete_button.setToolTip("Delete this entry")
+        delete_button.setFixedSize(24, 24)
+        delete_button.setCursor(Qt.PointingHandCursor)
+        delete_button.setStyleSheet("""
+            QPushButton {
+                color: #777;
+                background: transparent;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                color: #fff;
+                background: #a94442;
+            }
+        """)
+        delete_button.clicked.connect(
+            lambda checked=False: self.delete_requested.emit(self.entry.id)
+        )
+        layout.addWidget(delete_button)
+
     def _format_title(self) -> str:
         if self.entry.type == "image":
             return "[Image]"
@@ -148,6 +171,7 @@ class HistoryItemWidget(QFrame):
 
 class HistoryListWidget(QScrollArea):
     entry_clicked = Signal(str)
+    delete_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -176,6 +200,8 @@ class HistoryListWidget(QScrollArea):
         """)
 
     def set_entries(self, entries):
+        started = time.monotonic()
+        incoming_count = len(entries) if hasattr(entries, "__len__") else None
         self.setUpdatesEnabled(False)
         try:
             self._clear_items()
@@ -186,6 +212,7 @@ class HistoryListWidget(QScrollArea):
                 self._seen_fingerprints.add(entry.fingerprint)
                 widget = HistoryItemWidget(entry)
                 widget.clicked.connect(self._on_item_clicked)
+                widget.delete_requested.connect(self.delete_requested.emit)
                 self._items.append(widget)
                 self._layout.insertWidget(self._layout.count() - 1, widget)
             self.scrollToTop()
@@ -193,6 +220,12 @@ class HistoryListWidget(QScrollArea):
             self.setUpdatesEnabled(True)
             self._container.updateGeometry()
             self.viewport().update()
+        logger.debug(
+            "History widgets replaced: incoming=%s rendered=%d elapsed_ms=%.1f",
+            incoming_count,
+            len(self._items),
+            (time.monotonic() - started) * 1000,
+        )
 
     def append_entry(self, entry: ClipboardEntry):
         if entry.fingerprint in self._seen_fingerprints:
@@ -200,6 +233,7 @@ class HistoryListWidget(QScrollArea):
         self._seen_fingerprints.add(entry.fingerprint)
         widget = HistoryItemWidget(entry)
         widget.clicked.connect(self._on_item_clicked)
+        widget.delete_requested.connect(self.delete_requested.emit)
         self._items.insert(0, widget)
         self._layout.insertWidget(0, widget)
         self.scrollToTop()

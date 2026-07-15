@@ -1,23 +1,17 @@
-import sys
-import os
 import logging
 
-from PySide2.QtCore import Qt, QTimer, qInstallMessageHandler
+from PySide2.QtCore import qInstallMessageHandler
 from PySide2.QtWidgets import QApplication
 
 from src.storage.config import config
 from src.database.db import DatabaseManager
 
-logging.basicConfig(
-    level=logging.DEBUG if os.environ.get("PASTE_DEBUG") else logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
 logger = logging.getLogger(__name__)
 
 
 def _qt_message_handler(mode, context, message):
     if "BadWindow" in message or "SelectionRequest too old" in message:
+        logger.debug("Qt transient warning: %s", message)
         return
     if "FIXME" in message:
         logger.debug("Qt FIXME: %s", message)

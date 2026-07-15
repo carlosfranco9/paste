@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import time
 
 from PySide2.QtCore import Qt, QTimer, QPoint, QBuffer, Signal
 from PySide2.QtGui import QFont, QKeySequence, QPixmap
@@ -10,9 +11,16 @@ from PySide2.QtWidgets import (
 
 from src.ui.search_bar import SearchBar
 from src.ui.history_list import HistoryListWidget
+from src.ui.filter_bar import FilterBar
 from src.ui.preview import PreviewPanel
 from src.ui.settings.hotkey_dialog import HotkeyDialog
-from src.database.models import get_recent_entries, ClipboardEntry, get_entry_by_id
+from src.database.models import (
+    ClipboardEntry,
+    clear_entries,
+    delete_entry,
+    get_entry_by_id,
+    get_recent_entries,
+)
 from src.database.search import fts_search, count_entries
 from src.storage.config import config
 from src.monitor.types import ClipboardData
@@ -87,6 +95,11 @@ class MainWindow(QWidget):
         self._drag_pos = QPoint()
         self._skip_fingerprint = None
         self._recent_hashes = set()
+        self._active_filter = None
+        self._list_loaded = False
+        self._list_dirty = True
+        self._show_pending = False
+        self._last_toggle_at = 0.0
         self._setup_ui()
         self._setup_hotkey()
         self._setup_auto_hide()
@@ -112,11 +125,16 @@ class MainWindow(QWidget):
         header = self._build_header()
         layout.addWidget(header)
 
+        self._filter_bar = FilterBar()
+        self._filter_bar.filter_changed.connect(self._on_filter_changed)
+        layout.addWidget(self._filter_bar)
+
         content = QHBoxLayout()
         content.setSpacing(8)
 
         self._list = HistoryListWidget()
         self._list.entry_clicked.connect(self._on_entry_clicked)
+        self._list.delete_requested.connect(self._delete_entry)
         content.addWidget(self._list, 3)
 
         self._preview = PreviewPanel()
@@ -141,6 +159,11 @@ class MainWindow(QWidget):
         count_label.setObjectName("count_label")
         layout.addWidget(count_label)
 
+        clear_btn = QPushButton("Clear All")
+        clear_btn.setToolTip("Clear all clipboard history")
+        clear_btn.clicked.connect(self._clear_history)
+        layout.addWidget(clear_btn)
+
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(26, 26)
         close_btn.clicked.connect(self.hide)
@@ -151,7 +174,9 @@ class MainWindow(QWidget):
     def _setup_hotkey(self):
         hotkey_str = config.get("hotkeys", "toggle_window", default="Ctrl+Shift+V")
         self._hotkey.register(hotkey_str)
-        self._hotkey.activated.connect(self.toggle_visibility)
+        self._hotkey.activated.connect(
+            lambda: self.toggle_visibility("hotkey")
+        )
 
         self._hotkey_poll = QTimer(self)
         self._hotkey_poll.timeout.connect(self._hotkey.poll_event)
@@ -178,16 +203,43 @@ class MainWindow(QWidget):
     def mouseReleaseEvent(self, event):
         self._drag_pos = QPoint()
 
-    def toggle_visibility(self):
+    def toggle_visibility(self, source="unknown"):
+        now = time.monotonic()
+        logger.info(
+            "Visibility toggle requested: source=%s visible=%s pending=%s",
+            source,
+            self.isVisible(),
+            self._show_pending,
+        )
+        if now - self._last_toggle_at < 0.25:
+            logger.warning("Ignoring rapid repeated visibility toggle: source=%s", source)
+            return
+        self._last_toggle_at = now
+        if self._show_pending:
+            logger.warning("Ignoring duplicate show request while one is pending")
+            return
         if self.isVisible():
             self.hide()
+            logger.info("Main window hidden: source=%s", source)
         else:
-            self.center_on_screen()
-            self.show()
-            self.raise_()
-            self.activateWindow()
-            self._search_bar.setFocus()
-            self._search_bar.selectAll()
+            self._show_pending = True
+            QTimer.singleShot(0, lambda: self._show_window(source))
+
+    def _show_window(self, source):
+        started = time.monotonic()
+        self._show_pending = False
+        self._focus_timer.stop()
+        self.center_on_screen()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._search_bar.setFocus()
+        self._search_bar.selectAll()
+        logger.info(
+            "Main window shown: source=%s elapsed_ms=%.1f",
+            source,
+            (time.monotonic() - started) * 1000,
+        )
 
     def center_on_screen(self):
         screen = QApplication.primaryScreen()
@@ -198,8 +250,27 @@ class MainWindow(QWidget):
             self.move(x, y)
 
     def showEvent(self, event):
+        started = time.monotonic()
         super().showEvent(event)
-        self._refresh_list(self._search_bar.text().strip())
+        logger.info(
+            "showEvent: loaded=%s dirty=%s query=%r filter=%s",
+            self._list_loaded,
+            self._list_dirty,
+            self._search_bar.text().strip(),
+            self._active_filter or "all",
+        )
+        if not self._list_loaded or self._list_dirty:
+            self._refresh_list(self._search_bar.text().strip())
+        else:
+            logger.debug("Skipping unchanged history rebuild on showEvent")
+        logger.debug(
+            "showEvent completed: elapsed_ms=%.1f",
+            (time.monotonic() - started) * 1000,
+        )
+
+    def hideEvent(self, event):
+        logger.info("hideEvent")
+        super().hideEvent(event)
 
     def focusOutEvent(self, event):
         super().focusOutEvent(event)
@@ -225,15 +296,27 @@ class MainWindow(QWidget):
             self._recent_hashes.clear()
         entry = self._clip_processor.process(data)
         if entry:
+            if not getattr(self, "_list_loaded", True):
+                self._list_dirty = True
+                return
             query = self._search_bar.text().strip()
-            if query:
-                self._refresh_list(query)
+            active_filter = getattr(self, "_active_filter", None)
+            if query or active_filter:
+                if getattr(self, "isVisible", lambda: True)():
+                    self._refresh_list(query)
+                else:
+                    self._list_dirty = True
             else:
                 self._list.append_entry(entry)
                 self._update_count()
 
     def _on_search(self, query: str):
         self._refresh_list(query)
+
+    def _on_filter_changed(self, filter_key):
+        self._active_filter = None if filter_key == "all" else filter_key
+        logger.info("History filter changed: %s", filter_key)
+        self._refresh_list(self._search_bar.text().strip())
 
     def _on_search_confirm(self):
         self._search_bar.cancel_pending_search()
@@ -246,19 +329,32 @@ class MainWindow(QWidget):
             self._on_entry_clicked(first.entry.id)
 
     def _refresh_list(self, query: str = ""):
+        started = time.monotonic()
+        entry_type = self._active_filter
         if query:
-            rows = fts_search(query)
+            rows = fts_search(query, entry_type=entry_type)
             entries = [ClipboardEntry.from_row(r) for r in rows]
         else:
-            entries = get_recent_entries(limit=100)
+            entries = get_recent_entries(limit=100, entry_type=entry_type)
         self._list.set_entries(entries)
-        self._update_count()
+        self._list_loaded = True
+        self._list_dirty = False
+        self._update_count(entry_type)
+        logger.info(
+            "History refreshed: query=%r filter=%s rows=%d elapsed_ms=%.1f",
+            query,
+            entry_type or "all",
+            len(entries),
+            (time.monotonic() - started) * 1000,
+        )
         return entries
 
-    def _update_count(self):
+    def _update_count(self, entry_type=None):
         label = self.findChild(QLabel, "count_label")
         if label:
-            label.setText(f"{count_entries()} items")
+            if entry_type is None:
+                entry_type = getattr(self, "_active_filter", None)
+            label.setText(f"{count_entries(entry_type)} items")
 
     def _on_entry_clicked(self, entry_id):
         row = get_entry_by_id(entry_id)
@@ -272,6 +368,45 @@ class MainWindow(QWidget):
         if not row:
             return False
         return self._write_to_clipboard(ClipboardEntry.from_row(row))
+
+    def _delete_entry(self, entry_id):
+        started = time.monotonic()
+        if not delete_entry(entry_id):
+            logger.warning("Delete requested for missing entry: id=%s", entry_id)
+            return
+        self._recent_hashes.clear()
+        if self._preview.current_entry_id == entry_id:
+            self._preview.clear()
+        self._list_dirty = True
+        self._refresh_list(self._search_bar.text().strip())
+        logger.info(
+            "History entry deleted: id=%s elapsed_ms=%.1f",
+            entry_id,
+            (time.monotonic() - started) * 1000,
+        )
+
+    def _clear_history(self):
+        answer = QMessageBox.question(
+            self,
+            "Clear Clipboard History",
+            "Delete all clipboard history? This cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            logger.info("Clear history cancelled")
+            return
+        started = time.monotonic()
+        deleted_count = clear_entries()
+        self._recent_hashes.clear()
+        self._preview.clear()
+        self._list_dirty = True
+        self._refresh_list(self._search_bar.text().strip())
+        logger.info(
+            "Clipboard history cleared: rows=%d elapsed_ms=%.1f",
+            deleted_count,
+            (time.monotonic() - started) * 1000,
+        )
 
     def open_hotkey_settings(self):
         if not self._hotkey.supports_global_hotkey:
